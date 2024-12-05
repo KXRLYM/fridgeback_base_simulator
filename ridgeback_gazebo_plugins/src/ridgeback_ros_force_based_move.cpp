@@ -284,11 +284,12 @@ namespace gazebo
     ignition::math::Vector3d angular_vel = parent_->RelativeAngularVel();
     ignition::math::Vector3d linear_vel = parent_->RelativeLinearVel();
 
-    odom_transform_= odom_transform_ * this->getTransformForMotion(linear_vel.X(), angular_vel.Z(), step_time);
+    odom_transform_= odom_transform_ * this->getTransformForMotion(linear_vel.X(), linear_vel.Y(), angular_vel.Z(), step_time);
 
     tf::poseTFToMsg(odom_transform_, odom_.pose.pose);
     odom_.twist.twist.angular.z = angular_vel.Z();
     odom_.twist.twist.linear.x  = linear_vel.X();
+    odom_.twist.twist.linear.y = linear_vel.Y();
 
     odom_.header.stamp = current_time;
     odom_.header.frame_id = odom_frame;
@@ -330,26 +331,24 @@ namespace gazebo
   }
 
 
-  tf::Transform GazeboRosForceBasedMove::getTransformForMotion(double linear_vel_x, double angular_vel, double timeSeconds) const
+  tf::Transform GazeboRosForceBasedMove::getTransformForMotion(double linear_vel_x, double linear_vel_y, double angular_vel, double timeSeconds) const
   {
     tf::Transform tmp;
     tmp.setIdentity();
 
+    const double linear_x = linear_vel_x * timeSeconds;
+    const double linear_y = linear_vel_y * timeSeconds;
+    const double angular = angular_vel * timeSeconds;
 
     if (std::abs(angular_vel) < 0.0001) {
       //Drive straight
-      tmp.setOrigin(tf::Vector3(static_cast<double>(linear_vel_x*timeSeconds), 0.0, 0.0));
+      tmp.setOrigin(tf::Vector3(static_cast<double>(linear_x), 0.0, 0.0));
     } else {
-      //Follow circular arc
-      double distChange = linear_vel_x * timeSeconds;
-      double angleChange = angular_vel * timeSeconds;
+      const double delta_x = linear_x*cos(angular) - linear_y*sin(angular);
+      const double delta_y = linear_x*sin(angular) + linear_y*cos(angular);        
 
-      double arcRadius = distChange / angleChange;
-
-      tmp.setOrigin(tf::Vector3(std::sin(angleChange) * arcRadius,
-                                arcRadius - std::cos(angleChange) * arcRadius,
-                                0.0));
-      tmp.setRotation(tf::createQuaternionFromYaw(angleChange));
+      tmp.setOrigin(tf::Vector3(delta_x, delta_y, 0.0));
+      tmp.setRotation(tf::createQuaternionFromYaw(angular));
     }
 
     return tmp;
